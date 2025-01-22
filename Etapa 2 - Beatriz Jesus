@@ -1,0 +1,333 @@
+# Projeto Índigo
+import pandas as pd # Bibliotecas baixadas para rodar os códigos
+import polars as pl # Bibliotecas baixadas para rodar os códigos
+import time         # Bibliotecas baixadas para rodar os códigos
+import psutil
+
+# Pandas
+# Carregar arquivos
+inicio_tempo_pd = time.time()
+out23_pandas = pd.read_csv("202310_NovoBolsaFamilia.csv", sep=";", encoding="latin-1")
+nov23_pandas = pd.read_csv("202311_NovoBolsaFamilia.csv", sep=";", encoding="latin-1")
+dez23_pandas = pd.read_csv("202312_NovoBolsaFamilia.csv", sep=";", encoding="latin-1")
+
+print("Tempo de execução para carregar os arquivos no Polars:", time.time() - inicio_tempo_pd, "segundos")
+
+# Combinar os arquivos
+df_pandas = pd.concat([out23_pandas, nov23_pandas, dez23_pandas])
+
+# Otimizar com Parquet
+df_pandas.to_parquet("BolsaFamilia_combined.parquet", engine="pyarrow")
+
+print("Tempo de execução para salvar em Parquet:", time.time() - inicio_tempo_pd, "segundos")
+
+# Carregar o arquivo Parquet otimizado
+df_parquet = pd.read_parquet("BolsaFamilia_combined.parquet", engine="pyarrow")
+
+# Estatísticas Descritivas
+print(df_parquet.describe())  # Descrição básica das colunas
+
+# Verificar os nomes das colunas do DataFrame
+print(df_parquet.columns)
+
+# Estatísticas Adicionais Pandas
+# Básicas
+media = df_parquet['VALOR PARCELA'].mean()
+mediana = df_parquet['VALOR PARCELA'].median()
+desvio_padrao = df_parquet['VALOR PARCELA'].std()
+q1 = df_parquet['VALOR PARCELA'].quantile(0.25)
+q2 = mediana
+q3 = df_parquet['VALOR PARCELA'].quantile(0.75)
+q4 = df_parquet['VALOR PARCELA'].max()
+iqr = q3 - q1
+limite_superior = q3 + 1.5 * iqr
+limite_inferior = q1 - 1.5 * iqr
+
+# Frequência de valores
+frequencia = df_parquet['VALOR PARCELA'].value_counts()
+
+# Correlação entre as colunas
+correlacao = df_parquet.corr()
+
+# Assimetria e Curtose
+assimetria = df_parquet['VALOR PARCELA'].skew()
+curtose = df_parquet['VALOR PARCELA'].kurt()
+
+# Valores finais
+print(f'Média: {media}')
+print(f'Mediana: {mediana}')
+print(f'Desvio Padrão: {desvio_padrao}')
+print(f'Q1: {q1}')
+print(f'Q2: {q2}')
+print(f'Q3: {q3}')
+print(f'Q4: {q4}')
+print(f'IQR: {iqr}')
+print(f'Limite Superior: {limite_superior}')
+print(f'Limite Inferior: {limite_inferior}')
+print(f'Frequência dos Valores: \n{frequencia}')
+print(f'Matriz de Correlação: \n{correlacao}')
+print(f'Assimetria: {assimetria}')
+print(f'Curtose: {curtose}')
+
+# Exportar os dados consolidados para Parquet usando Pandas
+df_pandas.to_parquet("BolsaFamilia_analisado_pandas.parquet", engine="pyarrow")
+
+# Polars
+# Carregar arquivos
+# Codificação 'utf8-lossy' no Polars
+out23_polars = pl.scan_csv("202310_NovoBolsaFamilia.csv", separator=";", encoding="utf8-lossy")
+nov23_polars = pl.scan_csv("202311_NovoBolsaFamilia.csv", separator=";", encoding="utf8-lossy")
+dez23_polars = pl.scan_csv("202312_NovoBolsaFamilia.csv", separator=";", encoding="utf8-lossy")
+
+# Processar e coletar os dados
+out23_polars = out23_polars.collect()
+nov23_polars = nov23_polars.collect()
+dez23_polars = dez23_polars.collect()
+
+# Mostrar tempo de execução
+inicio_tempo_pl = time.time()
+print("Tempo de execução para carregar os arquivos no Polars:", time.time() - inicio_tempo_pl, "segundos")
+
+# Combinar os arquivos
+df_polars = pl.concat([out23_polars, nov23_polars, dez23_polars])
+
+# Salvar o arquivo combinado como Parquet para otimização
+df_polars.write_parquet("BolsaFamilia_combined_polars.parquet")
+
+print("Tempo de execução para salvar em Parquet:", time.time() - inicio_tempo_pl, "segundos")
+# Carregar o arquivo Parquet otimizado
+df_parquet_polars = pl.read_parquet("BolsaFamilia_combined_polars.parquet")
+
+# Estatísticas Descritivas
+print(df_parquet_polars.describe())  # Descrição básica das colunas
+
+# Verificar os nomes das colunas
+print(df_parquet_polars.columns)
+
+# Estatísticas Adicionais no Polars
+# Básicas
+media = df_parquet_polars.select(pl.col('VALOR PARCELA').mean()).to_numpy()[0][0]
+mediana = df_parquet_polars.select(pl.col('VALOR PARCELA').median()).to_numpy()[0][0]
+desvio_padrao = df_parquet_polars.select(pl.col('VALOR PARCELA').std()).to_numpy()[0][0]
+q1 = df_parquet_polars.select(pl.col('VALOR PARCELA').quantile(0.25)).to_numpy()[0][0]
+q2 = mediana
+q3 = df_parquet_polars.select(pl.col('VALOR PARCELA').quantile(0.75)).to_numpy()[0][0]
+q4 = df_parquet_polars.select(pl.col('VALOR PARCELA').max()).to_numpy()[0][0]
+iqr = q3 - q1
+limite_superior = q3 + 1.5 * iqr
+limite_inferior = q1 - 1.5 * iqr
+
+# Frequência de valores
+frequencia = df_parquet_polars.groupby('VALOR PARCELA').agg(pl.count().alias("Frequência"))
+
+# Correlação entre as colunas
+correlacao = df_parquet_polars.select(pl.corr('VALOR PARCELA', 'NIS FAVORECIDO'))  # Exemplo de correlação entre duas colunas
+
+# Assimetria e Curtose
+assimetria = df_parquet_polars.select(pl.col('VALOR PARCELA').skew()).to_numpy()[0][0]
+curtose = df_parquet_polars.select(pl.col('VALOR PARCELA').kurt()).to_numpy()[0][0]
+
+# Valores finais
+print(f'Média: {media}')
+print(f'Mediana: {mediana}')
+print(f'Desvio Padrão: {desvio_padrao}')
+print(f'Q1: {q1}')
+print(f'Q2: {q2}')
+print(f'Q3: {q3}')
+print(f'Q4: {q4}')
+print(f'IQR: {iqr}')
+print(f'Limite Superior: {limite_superior}')
+print(f'Limite Inferior: {limite_inferior}')
+print(f'Frequência dos Valores: \n{frequencia}')
+print(f'Matriz de Correlação: \n{correlacao}')
+print(f'Assimetria: {assimetria}')
+print(f'Curtose: {curtose}')
+
+# Comparação Pandas e Polars
+# Tempo de carregamento
+# Pandas
+tempo_pd = time.time()
+
+# Carregar os dados no Pandas
+df_parquet = pd.read_parquet("BolsaFamilia_combined.parquet", engine="pyarrow")
+
+# Medir o tempo
+tempo_carregamento_pandas = time.time() - tempo_pd
+
+
+###
+
+
+# Polars
+tempo_pl = time.time()
+
+# Carregar os dados no Polars
+df_parquet_polars = pl.read_parquet("BolsaFamilia_combined_polars.parquet")
+
+# Medir o tempo
+tempo_carregamento_polars = time.time() - tempo_pl
+
+# Uso de CPU e Memória
+# Pandas
+# Antes
+processo = psutil.Process()
+
+print("Uso de CPU e Memória antes de carregar os dados:")
+cpu_antes_pd = processo.cpu_percent()  # Percentual de CPU antes
+memoria_antes_pd = processo.memory_info().rss / (1024**2)  # Memória em MB antes
+
+print(f"Uso de CPU (antes): {cpu_antes_pd} %")
+print(f"Uso de Memória (antes): {memoria_antes_pd:.2f} MB")
+
+# Carregar os dados no Pandas
+df_parquet = pd.read_parquet("BolsaFamilia_combined.parquet", engine="pyarrow")
+
+# Depois
+cpu_depois_pd = processo.cpu_percent()  # Percentual de CPU após
+memoria_depois_pd = processo.memory_info().rss / (1024**2)  # Memória em MB após
+
+print("Uso de CPU e Memória após carregar os dados:")
+print(f"Uso de CPU (após): {cpu_depois_pd} %")
+print(f"Uso de Memória (após): {memoria_depois_pd:.2f} MB")
+
+# Variação
+cpu_variacao_pd = cpu_depois_pd - cpu_antes_pd
+memoria_variacao_pd = memoria_depois_pd - memoria_antes_pd
+
+
+print('')
+
+
+# Polars
+# Antes
+processo = psutil.Process()
+
+print("Uso de CPU e Memória antes de carregar os dados:")
+cpu_antes_pl = processo.cpu_percent()  # Percentual de CPU antes
+memoria_antes_pl = processo.memory_info().rss / (1024**2)  # Memória em MB antes
+
+print(f"Uso de CPU (antes): {cpu_antes_pl} %")
+print(f"Uso de Memória (antes): {memoria_antes_pl:.2f} MB")
+
+# Carregar os dados no Polars
+df_parquet_polars = pl.read_parquet("BolsaFamilia_combined_polars.parquet")
+
+# Depois
+cpu_depois_pl = processo.cpu_percent()  # Percentual de CPU após
+memoria_depois_pl = processo.memory_info().rss / (1024**2)  # Memória em MB após
+
+print("Uso de CPU e Memória após carregar os dados:")
+print(f"Uso de CPU (após): {cpu_depois_pl} %")
+print(f"Uso de Memória (após): {memoria_depois_pl:.2f} MB")
+
+# Variação
+cpu_variacao_pl = cpu_depois_pl - cpu_antes_pl
+memoria_variacao_pl = memoria_depois_pl - memoria_antes_pl
+
+# Calcúlo de Estatísticas
+# Pandas
+stats_tempo_pd = time.time()
+
+# Calcular as estatísticas no Pandas
+media = df_parquet['VALOR PARCELA'].mean()
+mediana = df_parquet['VALOR PARCELA'].median()
+desvio_padrao = df_parquet['VALOR PARCELA'].std()
+
+tempo_estatisticas_pandas = time.time() - stats_tempo_pd
+
+
+###
+
+
+# Polars
+stats_tempo_pl = time.time()
+
+# Calcular as estatísticas no Polars
+media = df_parquet_polars.select(pl.col('VALOR PARCELA').mean()).to_numpy()[0][0]
+mediana = df_parquet_polars.select(pl.col('VALOR PARCELA').median()).to_numpy()[0][0]
+desvio_padrao = df_parquet_polars.select(pl.col('VALOR PARCELA').std()).to_numpy()[0][0]
+
+tempo_estatisticas_polars = time.time() - stats_tempo_pl
+
+# Exportar Dados
+# Pandas
+export_tempo_pd = time.time()
+
+# Exportar para Parquet
+df_pandas.to_parquet("BolsaFamilia_analisado_pandas.parquet", engine="pyarrow")
+
+tempo_export_pandas = time.time() - export_tempo_pd
+print(f"Tempo de exportação (Pandas): {tempo_export_pandas:.2f} segundos")
+
+
+###
+
+
+# Polars
+export_tempo_pl = time.time()
+
+# Exportar para Parquet
+df_parquet_polars = pl.read_parquet("BolsaFamilia_combined_polars.parquet")
+
+tempo_export_polars = time.time() - export_tempo_pl
+print(f"Tempo de exportação (Polars): {tempo_export_polars:.2f} segundos")
+
+# Resultados Comparação
+
+# Variação de Tempo de Carregamento
+print(f"Tempo de carregamento (Pandas): {tempo_carregamento_pandas:.2f} segundos")
+print('')
+print(f"Tempo de carregamento (Polars): {tempo_carregamento_polars:.2f} segundos")
+
+
+print('')
+print('---')
+print('')
+
+
+# Variação de Uso de CPU e Memória
+print(f"Variação no uso de CPU (Pandas): {cpu_variacao_pd} %")
+print(f"Variação no uso de memória (Pandas): {memoria_variacao_pd:.2f} MB")
+print('')
+print(f"Variação no uso de CPU (Polars): {cpu_variacao_pl} %")
+print(f"Variação no uso de memória (Polars): {memoria_variacao_pl:.2f} MB")
+
+
+print('')
+print('---')
+print('')
+
+
+# Variação de Tempo para Calcular Estatísticas
+print(f"Tempo para calcular estatísticas (Pandas): {tempo_estatisticas_pandas:.2f} segundos")
+print('')
+print(f"Tempo para calcular estatísticas (Polars): {tempo_estatisticas_polars:.2f} segundos")
+
+
+print('')
+print('---')
+print('')
+
+
+# Variação do Tempo de Exportação
+print(f"Tempo de exportação (Pandas): {tempo_export_pandas:.2f} segundos")
+print('')
+print(f"Tempo de exportação (Polars): {tempo_export_polars:.2f} segundos")
+tempo_carregamento_total = tempo_carregamento_polars - tempo_carregamento_pandas
+print(f'O Polars leva {tempo_carregamento_total:.2f} segundos a menos que o Pandas no tempo de carregamento.')
+
+print('')
+
+cpu_varicao_total = cpu_variacao_pl - cpu_variacao_pd
+memoria_variacao_total = memoria_variacao_pl - memoria_variacao_pd
+print(f'O Polars gasta menos {cpu_varicao_total} % de CPU e {memoria_variacao_total:.2f} MB em relação ao Pandas.')
+
+print('')
+
+tempo_estatisticas_total = tempo_estatisticas_polars - tempo_estatisticas_pandas
+print(f'O Polars leva {tempo_estatisticas_total:.2f} segundos a menos que o Pandas para calcular estatísticas.')
+
+print('')
+
+tempo_export_total = tempo_export_polars - tempo_export_pandas
+print(f'O Polars leva {tempo_export_total:.2f} segundos a menos que o Pandas para exportação dos dados.')
